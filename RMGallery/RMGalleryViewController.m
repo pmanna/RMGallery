@@ -61,7 +61,8 @@
 - (void)viewDidLoad
 {
     [super viewDidLoad];
-    self.automaticallyAdjustsScrollViewInsets = NO;
+	if ([self respondsToSelector: @selector(automaticallyAdjustsScrollViewInsets)])
+		self.automaticallyAdjustsScrollViewInsets = NO;
     _galleryView.frame = self.view.bounds;
     _galleryView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self.view addSubview:_galleryView];
@@ -205,7 +206,8 @@
     UINavigationBar *navigationBar = navigationController.navigationBar;
     const NSTimeInterval duration = animated ? UINavigationControllerHideShowBarDuration : 0;
     [UIView animateWithDuration:duration animations:^{
-        if (viewControllerBasedStatusBarAppearence)
+        if (viewControllerBasedStatusBarAppearence &&
+			[self respondsToSelector:@selector(setNeedsStatusBarAppearanceUpdate)])
         {
             [self setNeedsStatusBarAppearanceUpdate];
         }

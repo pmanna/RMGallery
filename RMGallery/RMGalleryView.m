@@ -38,6 +38,8 @@ static NSString *const CellIdentifier = @"Cell";
 
 @interface RMGalleryView()<UICollectionViewDelegate>
 
+- (void)readjustToIndex: (NSInteger)anIndex;
+
 @end
 
 @implementation RMGalleryView
@@ -50,6 +52,7 @@ static NSString *const CellIdentifier = @"Cell";
 }
 
 @synthesize galleryIndex = _galleryIndex;
+@synthesize infiniteScroll = _infiniteScroll;
 
 - (id)init
 {
@@ -115,6 +118,11 @@ static NSString *const CellIdentifier = @"Cell";
     _doubleTapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(doubleTapGesture:)];
     _doubleTapGestureRecognizer.numberOfTapsRequired = 2;
     [self addGestureRecognizer:_doubleTapGestureRecognizer];
+	
+	_singleTapGestureRecognizer = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(singleTapGesture:)];
+	_singleTapGestureRecognizer.numberOfTapsRequired = 1;
+	[_singleTapGestureRecognizer requireGestureRecognizerToFail: _doubleTapGestureRecognizer];
+	[self addGestureRecognizer: _singleTapGestureRecognizer];
     
     [super setDelegate:self];
 }
@@ -123,17 +131,28 @@ static NSString *const CellIdentifier = @"Cell";
 
 - (NSInteger)collectionView:(UICollectionView *)collectionView numberOfItemsInSection:(NSInteger)section
 {
-    return [self.galleryDataSource numberOfImagesInGalleryView:self];
+	return [self.galleryDataSource numberOfImagesInGalleryView:self] + (self.infiniteScroll ? 2 : 0);
 }
 
 - (UICollectionViewCell *)collectionView:(UICollectionView *)collectionView cellForItemAtIndexPath:(NSIndexPath *)indexPath
 {
-    RMGalleryCell *cell = [collectionView dequeueReusableCellWithReuseIdentifier:CellIdentifier forIndexPath:indexPath];
-
+    RMGalleryCell 	*cell		= [collectionView dequeueReusableCellWithReuseIdentifier:CellIdentifier forIndexPath:indexPath];
+	NSInteger		numImages	= [self.galleryDataSource numberOfImagesInGalleryView:self];
+	NSInteger		realIndex	= indexPath.row - (self.infiniteScroll ? 1 : 0);
+	
+	if (self.infiniteScroll) {
+		if (realIndex < 0)
+			realIndex	= numImages - 1;
+		else if (realIndex == numImages)
+			realIndex	= 0;
+	}
+	
     [cell.activityIndicatorView startAnimating];
     cell.imageContentMode = self.imageContentMode;
     __block BOOL sync = YES;
-    [self.galleryDataSource galleryView:self imageForIndex:indexPath.row completion:^(UIImage *image) {
+    [self.galleryDataSource galleryView: self
+						  imageForIndex: realIndex
+							 completion: ^(UIImage *image) {
         // Check if cell was reused
         NSIndexPath *currentIndexPath = [self indexPathForCell:cell];
         if (!sync && [indexPath compare:currentIndexPath] != NSOrderedSame) return;
@@ -146,6 +165,14 @@ static NSString *const CellIdentifier = @"Cell";
 }
 
 #pragma mark Gestures
+
+- (void)singleTapGesture:(UIGestureRecognizer*)gestureRecognizer
+{
+	if ([self.galleryDelegate respondsToSelector:@selector(galleryView:didSelectIndex:)])
+	{
+		[self.galleryDelegate galleryView:self didSelectIndex: _galleryIndex];
+	}
+}
 
 - (void)doubleTapGesture:(UIGestureRecognizer*)gestureRecognizer
 {
@@ -191,7 +218,7 @@ static NSString *const CellIdentifier = @"Cell";
         targetIndex = velocity.x > 0 ? _willBeginDraggingIndex + 1 : _willBeginDraggingIndex - 1;
     }
     targetIndex = MAX(0, targetIndex);
-    const NSUInteger maxIndex = [self.galleryDataSource numberOfImagesInGalleryView:self] - 1;
+    const NSUInteger maxIndex = [self.galleryDataSource numberOfImagesInGalleryView:self] - (self.infiniteScroll ? -1 : 1);
     targetIndex = MIN(targetIndex, maxIndex);
     *targetContentOffset = [_imageFlowLayout offsetForIndex:targetIndex];
     
@@ -201,6 +228,13 @@ static NSString *const CellIdentifier = @"Cell";
     }
 }
 
+- (void)scrollViewDidEndDecelerating:(UIScrollView *)scrollView
+{
+	NSInteger endIndex	= [_imageFlowLayout indexForOffset:scrollView.contentOffset];
+	
+	[self readjustToIndex: endIndex];
+}
+
 #pragma mark UICollectionViewDelegate (Changing the index)
 
 - (void)scrollViewDidScroll:(UIScrollView *)scrollView
@@ -208,7 +242,16 @@ static NSString *const CellIdentifier = @"Cell";
     if (!self.scrollEnabled) {
         return;
     }
-    const NSUInteger index = [_imageFlowLayout indexForOffset:scrollView.contentOffset];
+	NSInteger	numImages	= [self.galleryDataSource numberOfImagesInGalleryView:self];
+	NSInteger	index		= ([_imageFlowLayout indexForOffset:scrollView.contentOffset] - (self.infiniteScroll ? 1 : 0));
+	
+	if (self.infiniteScroll) {
+		if (index < 0)
+			index	= numImages - 1;
+		else if (index == numImages)
+			index	= 0;
+	}
+	
     if (index != _galleryIndex)
     {
         _galleryIndex = index;
@@ -255,8 +298,25 @@ static NSString *const CellIdentifier = @"Cell";
 
     _galleryIndex = galleryIndex;
     
-    const CGPoint offset = [_imageFlowLayout offsetForIndex:_galleryIndex];
+    const CGPoint offset = [_imageFlowLayout offsetForIndex:_galleryIndex  + (self.infiniteScroll ? 1 : 0)];
     [self setContentOffset:offset animated:animated];
+}
+
+- (BOOL)infiniteScroll
+{
+	// Avoid return true if we have just 1 image
+	if ([self.galleryDataSource numberOfImagesInGalleryView:self] > 1)
+		return  _infiniteScroll;
+	return NO;
+}
+
+- (void)setInfiniteScroll:(BOOL)infiniteScroll
+{
+	if (_infiniteScroll != infiniteScroll) {
+		_infiniteScroll	= infiniteScroll;
+		
+		[self reloadData];
+	}
 }
 
 #pragma mark Locating cells
@@ -274,22 +334,30 @@ static NSString *const CellIdentifier = @"Cell";
 
 - (void)showNext
 {
-    const NSUInteger count = [self.galleryDataSource numberOfImagesInGalleryView:self];
-    const NSUInteger nextIndex = _galleryIndex + 1;
+    const NSUInteger count = [self.galleryDataSource numberOfImagesInGalleryView:self]  + (self.infiniteScroll ? 2 : 0);
+    const NSUInteger nextIndex = _galleryIndex + (self.infiniteScroll ? 2 : 1);
     if (nextIndex < count)
     {
         CGPoint offset = [_imageFlowLayout offsetForIndex:nextIndex];
         [self setContentOffset:offset animated:YES];
+		
+		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * (double)(NSEC_PER_SEC))), dispatch_get_main_queue(), ^{
+			[self readjustToIndex: nextIndex];
+		});
     }
 }
 
 - (void)showPrevious
 {
-    const NSInteger previousIndex = _galleryIndex - 1;
+	const NSInteger previousIndex = _galleryIndex - (self.infiniteScroll ? 0 : 1);
     if (previousIndex >= 0)
     {
         CGPoint offset = [_imageFlowLayout offsetForIndex:previousIndex];
         [self setContentOffset:offset animated:YES];
+		
+		dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * (double)(NSEC_PER_SEC))), dispatch_get_main_queue(), ^{
+			[self readjustToIndex: previousIndex];
+		});
     }
 }
 
@@ -339,6 +407,25 @@ static NSString *const CellIdentifier = @"Cell";
 }
 
 
+- (void)readjustToIndex: (NSInteger)anIndex
+{
+	// Here we do the trick of infinite scrolling: when at extremes,
+	// jump to the right in-list position without animation
+	if (self.infiniteScroll) {
+		const NSInteger	 numImages	= [self.galleryDataSource numberOfImagesInGalleryView:self];
+		
+		if (anIndex == 0) {
+			[self scrollToItemAtIndexPath: [NSIndexPath indexPathForItem: numImages inSection: 0]
+						 atScrollPosition: UICollectionViewScrollPositionLeft
+								 animated: NO];
+		} else if (anIndex > numImages) {
+			[self scrollToItemAtIndexPath: [NSIndexPath indexPathForItem: 1 inSection: 0]
+						 atScrollPosition: UICollectionViewScrollPositionLeft
+								 animated: NO];
+		}
+	}
+}
+
 @end
 
 @implementation RMGalleryViewLayout
@@ -358,7 +445,7 @@ static NSString *const CellIdentifier = @"Cell";
 - (CGPoint)targetContentOffsetForProposedContentOffset:(CGPoint)proposedContentOffset NS_AVAILABLE_IOS(7_0);
 {
     RMGalleryView *collectionView = (RMGalleryView*)self.collectionView;
-    NSUInteger targetIndex = collectionView.galleryIndex;
+	NSUInteger targetIndex = collectionView.galleryIndex + (collectionView.infiniteScroll ? 1 : 0);
     CGPoint targetContentOffset = [self offsetForIndex:targetIndex];
     return targetContentOffset;
 }

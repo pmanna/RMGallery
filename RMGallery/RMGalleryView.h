@@ -64,6 +64,13 @@
  */
 @property (nonatomic, readonly) UITapGestureRecognizer *doubleTapGestureRecognizer;
 
+/**
+ The single tap gesture recognizer. Sends a selection message to the delegate.
+ @discussion Disable this gesture recognizer to disable the default single tap behavior.
+ @see toggleZoomAtPoint:
+ */
+@property (nonatomic, readonly) UITapGestureRecognizer *singleTapGestureRecognizer;
+
 #pragma mark Managing State
 
 /**
@@ -73,6 +80,12 @@
  @see RMGalleryDelegate
  */
 @property (nonatomic, assign) NSUInteger galleryIndex;
+
+/**
+ A flag for infinite scrolling.
+ @discussion This will be used to let the gallery loop the scroll, i.e. when at end restarts from beginning and vice versa.
+ */
+@property (nonatomic, assign) BOOL	infiniteScroll;
 
 /**
  Whether or not to permit zooming.
@@ -156,5 +169,12 @@
  @param index The index to which the gallery view changed.
  */
 - (void)galleryView:(RMGalleryView*)galleryView didChangeIndex:(NSUInteger)index;
+
+/**
+ Notifies the delegate that the gallery view was tapped at the given index.
+ @param galleryView The gallery view.
+ @param index The index  to the gallery view selected item.
+ */
+- (void)galleryView:(RMGalleryView*)galleryView didSelectIndex:(NSUInteger)index;
 
 @end

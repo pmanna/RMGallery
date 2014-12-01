@@ -52,7 +52,8 @@
 #endif
     
     // Set the transitioning delegate. This is only necessary if you want to use RMGalleryTransition.
-    viewControllerToPresent.transitioningDelegate = self;
+	if ([viewControllerToPresent respondsToSelector: @selector(transitioningDelegate)])
+    	viewControllerToPresent.transitioningDelegate = self;
     viewControllerToPresent.modalPresentationStyle = UIModalPresentationFullScreen;
     
     [self presentViewController:viewControllerToPresent animated:YES completion:nil];
